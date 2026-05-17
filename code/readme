@@ -1,0 +1,225 @@
+python3 plot_mc_radial_observables.py --mc_dir ../MC --suffix PL_powerlaw --output_dir figures
+
+python3 pipeline.py --run_montecarlo --run_streams --overwrite --include_earth_radius --earth_radius_kpc 8.5 --a_values_kpc 0.3,0.5,0.7,1.0,1.5,2.0,3.0,5.0,7.0,10.0 --n_amc 100000 --n_history_keep 300 --max_files 100 --plot_density_contours --contour_max_files 1 --total_tracers 50000 --T_exp_yr 10 --use_earth_relative_velocity --v_rel_encounter_kms 232
+
+# AMC STREAM PIPELINE – USER GUIDE
+
+This repository implements a full pipeline to study the tidal stripping of axion miniclusters (AMCs) in the Milky Way and the subsequent evolution of the stripped material as streams.
+
+The workflow is divided into three components:
+
+```
+1) MonteCarlo.py   → generates AMC disruption histories
+2) stream.py       → evolves stripped material as tracer streams
+3) pipeline.py     → orchestrates the full analysis
+```
+
+The pipeline is designed to connect stellar encounters → stripping → phase-space evolution → observable stream properties.
+
+---
+
+1. PHYSICAL OVERVIEW
+
+---
+
+* AMCs evolve in the Galactic halo and undergo tidal encounters with stars.
+* Each encounter removes a fraction of mass (ΔM_strip).
+* The stripped material is treated as packets launched into phase space.
+* These packets are evolved as collisionless tracers in the Galactic potential.
+* No self-gravity of the stream is included after stripping.
+
+The goal is to determine:
+
+* whether streams remain bound
+* how their density evolves
+* whether they contribute significantly to the local dark matter phase space
+
+---
+
+2. FILE STRUCTURE
+
+---
+
+MonteCarlo.py
+Generates AMC disruption histories and saves files:
+../MC/event_histories_*/AMC_history_*.npz
+
+stream.py
+Reads one AMC_history file and evolves tracer particles.
+Outputs density evolution, slopes, and diagnostics.
+
+pipeline.py
+Main wrapper that:
+- runs MonteCarlo (optional)
+- runs stream analysis
+- aggregates results across radii
+
+Output folders:
+pipeline_outputs/
+stream_batch_output_a=*.kpc/
+stream_summary.csv
+stream_aggregate.npz
+plots (*.png)
+interpretation.txt
+
+```
+../MC/
+    event_histories_*/
+```
+
+---
+
+3. HOW TO RUN
+
+---
+
+Basic full run:
+
+```
+python3 pipeline.py
+```
+
+This runs:
+- Monte Carlo sampling
+- Stream evolution
+- Output generation
+
+---
+
+Run only stream analysis (using existing histories):
+
+```
+python3 pipeline.py --run_streams
+```
+
+---
+
+Run specific radii:
+
+```
+python3 pipeline.py \
+    --run_streams \
+    --a_values_kpc 8.0,8.5,9.0,9.5,10.0
+```
+
+---
+
+Full production example:
+
+```
+python3 pipeline.py \
+    --run_montecarlo --run_streams --overwrite \
+    --a_values_kpc 0.5,1.0,...,10.0 \
+    --n_amc 100000 \
+    --n_history_keep 200 \
+    --max_files 50
+```
+
+---
+
+4. KEY PARAMETERS
+
+---
+
+--a_values_kpc
+List of radii (in kpc) where AMCs are simulated.
+
+--n_amc
+Number of Monte Carlo realizations per radius.
+Larger values improve statistics (especially outer halo).
+
+--n_history_keep
+Number of AMC histories saved for stream analysis.
+IMPORTANT: this controls how many usable events you keep.
+
+--max_files
+Number of histories actually processed by stream.py.
+Controls runtime of the stream evolution stage.
+
+--overwrite
+Forces regeneration of Monte Carlo outputs.
+
+---
+
+5. OUTPUT QUANTITIES
+
+---
+
+For each radius, the pipeline produces:
+
+* Stream mass: M_stream
+* Velocity dispersions: σ_l, σ_t
+* Density evolution: ρ(t)
+* Slopes: d log ρ / d log t
+* Visibility time: t_vis
+* Boundness parameter: α
+
+Two density estimators are used:
+- coarse-grained density (global volume)
+- local density (nearest-neighbor estimator)
+
+The slope is extracted over a dynamical time window.
+
+---
+
+6. IMPORTANT NOTES
+
+---
+
+* The stream evolution DOES NOT assume ρ ∝ t^{-3}.
+  This scaling is only used as a reference for comparison.
+
+* The Galactic potential IS included in stream evolution.
+
+* Self-gravity of the stream is NOT included.
+
+* Outer halo results (a > 8 kpc) require larger statistics.
+
+---
+
+7. COMMON PITFALLS
+
+---
+
+Empty history folders:
+Increase --n_amc or --n_history_keep
+
+Few usable streams at large radii:
+Run only outer radii with higher statistics
+
+NaNs in output:
+Usually due to insufficient valid stripping events
+
+Slow runtime:
+Reduce --max_files or disable plotting
+
+---
+
+8. RECOMMENDED WORKFLOW
+
+---
+
+Step 1 (test):
+small n_amc, small max_files
+
+Step 2 (intermediate):
+increase n_history_keep
+
+Step 3 (final plots):
+max_files ≈ n_history_keep
+
+---
+
+9. FUTURE IMPROVEMENTS
+
+---
+
+* Select histories based on M_stream instead of random sampling
+* Include Galactic shear explicitly in analysis
+* Incorporate stream self-gravity (if relevant)
+* Extend to full phase-space distribution modeling
+
+---
+
+## END OF FILE
+

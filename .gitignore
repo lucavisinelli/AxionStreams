@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pkl
+*.npz
+*.npy
+*.pdf
+*.png
+*.jpg
+*.DS_Store
+MC/
+streams/
+results/
+code/pipeline_outputs/
+*.mp4
+*.csv
