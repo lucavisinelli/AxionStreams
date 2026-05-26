@@ -802,60 +802,11 @@ def _safe_array_from_npz(data, key, fallback=None):
     return np.asarray(fallback, dtype=float)
 
 
-def _stream_delta_nu_intrinsic_hz(sigma_l_kms, sigma_t_kms, nu_hz):
-    """
-    Intrinsic/rest-frame linewidth estimate:
-        Delta nu / nu_a ~ sigma_v^2 / c^2.
-
-    Kept for reference. The default plotted quantity below is the
-    detector/lab-frame linewidth.
-    """
-    sigma_l_kms = np.asarray(sigma_l_kms, dtype=float)
-    sigma_t_kms = np.asarray(sigma_t_kms, dtype=float)
-    sigma_v2 = (
-        np.maximum(sigma_l_kms, 0.0)**2
-        + 2.0 * np.maximum(sigma_t_kms, 0.0)**2
-    )
-    return float(nu_hz) * sigma_v2 / C_KMS**2
-
-
-def _stream_delta_nu_lab_hz(sigma_l_kms, sigma_t_kms, v_rel_kms, nu_hz):
-    """
-    Lab-frame linewidth estimate.
-
-    For a cold stream moving with bulk speed v_rel relative to the detector,
-    the leading observable kinetic-energy spread is
-
-        Delta nu / nu_a ~ v_rel * sigma_los / c^2,
-
-    where sigma_los is the velocity dispersion projected along the relative
-    stream-detector velocity. In the absence of an event-by-event projection
-    angle, we use the projection-averaged estimate
-
-        sigma_los^2 = (sigma_l^2 + 2 sigma_t^2)/3.
-
-    This is generally larger than the intrinsic/rest-frame sigma_v^2/c^2
-    width for very cold streams.
-    """
-    sigma_l_kms = np.asarray(sigma_l_kms, dtype=float)
-    sigma_t_kms = np.asarray(sigma_t_kms, dtype=float)
-    v_rel_kms = np.asarray(v_rel_kms, dtype=float)
-
-    sigma_los = np.sqrt(
-        (
-            np.maximum(sigma_l_kms, 0.0)**2
-            + 2.0 * np.maximum(sigma_t_kms, 0.0)**2
-        ) / 3.0
-    )
-
-    return float(nu_hz) * np.maximum(v_rel_kms, 0.0) * sigma_los / C_KMS**2
-
-
 def _stream_delta_nu_hz(sigma_l_kms, sigma_t_kms, nu_hz):
-    """
-    Backward-compatible alias for the intrinsic linewidth.
-    """
-    return _stream_delta_nu_intrinsic_hz(sigma_l_kms, sigma_t_kms, nu_hz)
+    sigma_l_kms = np.asarray(sigma_l_kms, dtype=float)
+    sigma_t_kms = np.asarray(sigma_t_kms, dtype=float)
+    sigma_v2 = np.maximum(sigma_l_kms, 0.0)**2 + 2.0 * np.maximum(sigma_t_kms, 0.0)**2
+    return float(nu_hz) * sigma_v2 / C_KMS**2
 
 
 def plot_haloscope_linewidth_density_solar(
@@ -869,13 +820,16 @@ def plot_haloscope_linewidth_density_solar(
     """
     Produce a detector-facing diagnostic for the Solar-neighborhood sample.
 
-    The plot shows the detector-frame stream linewidth, Delta nu_stream, against the
+    The plot shows the intrinsic stream linewidth, Delta nu_stream, against the
     analytic ballistic stream-density contrast rho_track(t)/rho_loc at a chosen
-    reference time. Horizontal bands show the cavity bandwidths for FLASH and ADMX.
+    reference time. Horizontal lines show the cavity bandwidths for FLASH and
+    ADMX, and dotted lines show the approximate virialized-halo linewidth
+    Delta nu/nu ~ 10^{-6}.
 
-    The linewidth is computed in the detector frame using the leading Doppler-broadened term.
+    The routine prefers linewidth arrays written by MonteCarlo_with_haloscope.py.
+    If they are absent, it recomputes them from sigma_l and sigma_t.
     """
-    print("[INFO] Haloscope plot style: lab-frame linewidth; two cavity bands only; rasterized scatter; opaque legend.")
+    print("[INFO] Haloscope plot style: two cavity bands only; rasterized scatter; opaque legend.")
     if sample_file is None or not os.path.isfile(sample_file):
         print(f"[WARNING] Cannot make haloscope linewidth plot; missing sample file: {sample_file}")
         return None
@@ -892,7 +846,6 @@ def plot_haloscope_linewidth_density_solar(
         sigma_t = np.asarray(d["sigma_t"], dtype=float)
         rho_loc = np.asarray(d["rho_loc"], dtype=float)
         P_enc = _safe_array_from_npz(d, "P_encounter_orbit", np.full_like(M_stream, np.nan))
-        v_rel_eff = _safe_array_from_npz(d, "v_rel_effective_kms", np.full_like(M_stream, 232.0))
 
         R0_key = _first_existing_npz_key(d, ["R0", "R_i", "R_initial"])
         l0_key = _first_existing_npz_key(d, ["l0", "R0", "R_i", "R_initial"])
@@ -906,15 +859,12 @@ def plot_haloscope_linewidth_density_solar(
         dnu_admx_low = _safe_array_from_npz(d, "delta_nu_admx_low_hz")
         dnu_admx_high = _safe_array_from_npz(d, "delta_nu_admx_high_hz")
 
-    # Compute lab-frame linewidths. We intentionally do not use the legacy
-    # delta_nu_* arrays written by older MonteCarlo_with_haloscope.py files,
-    # because those represented the intrinsic/rest-frame sigma_v^2/c^2 width.
-    if len(v_rel_eff) != len(M_stream):
-        v_rel_eff = np.full_like(M_stream, 232.0, dtype=float)
-
-    dnu_flash = _stream_delta_nu_lab_hz(sigma_l, sigma_t, v_rel_eff, FLASH_NU_HZ)
-    dnu_admx_low = _stream_delta_nu_lab_hz(sigma_l, sigma_t, v_rel_eff, ADMX_NU_LOW_HZ)
-    dnu_admx_high = _stream_delta_nu_lab_hz(sigma_l, sigma_t, v_rel_eff, ADMX_NU_HIGH_HZ)
+    if len(dnu_flash) != len(M_stream):
+        dnu_flash = _stream_delta_nu_hz(sigma_l, sigma_t, FLASH_NU_HZ)
+    if len(dnu_admx_low) != len(M_stream):
+        dnu_admx_low = _stream_delta_nu_hz(sigma_l, sigma_t, ADMX_NU_LOW_HZ)
+    if len(dnu_admx_high) != len(M_stream):
+        dnu_admx_high = _stream_delta_nu_hz(sigma_l, sigma_t, ADMX_NU_HIGH_HZ)
 
     t_s = float(density_time_myr) * 1.0e6 * YEAR
     R_s = R0 + np.maximum(sigma_t, 0.0) * t_s / 3.086e13
@@ -965,18 +915,8 @@ def plot_haloscope_linewidth_density_solar(
     # the PDF. We show one representative linewidth per experiment, evaluated at
     # the geometric-center frequency of the experimental range. The horizontal
     # shaded regions show the corresponding cavity-bandwidth ranges.
-    y_flash_mid = _stream_delta_nu_lab_hz(
-        sigma_l[idx],
-        sigma_t[idx],
-        v_rel_eff[idx],
-        FLASH_NU_HZ,
-    )
-    y_admx_mid = _stream_delta_nu_lab_hz(
-        sigma_l[idx],
-        sigma_t[idx],
-        v_rel_eff[idx],
-        ADMX_NU_HZ,
-    )
+    y_flash_mid = _stream_delta_nu_hz(sigma_l[idx], sigma_t[idx], FLASH_NU_HZ)
+    y_admx_mid = _stream_delta_nu_hz(sigma_l[idx], sigma_t[idx], ADMX_NU_HZ)
 
     ax.scatter(
         x,
@@ -987,7 +927,7 @@ def plot_haloscope_linewidth_density_solar(
         linewidths=0,
         rasterized=True,
         zorder=2,
-        label=rf"FLASH lab-frame linewidth",
+        label=rf"FLASH stream linewidth",
     )
     ax.scatter(
         x,
@@ -998,7 +938,7 @@ def plot_haloscope_linewidth_density_solar(
         linewidths=0,
         rasterized=True,
         zorder=2,
-        label=rf"ADMX lab-frame linewidth",
+        label=rf"ADMX stream linewidth",
     )
 
     flash_bw_low = FLASH_NU_LOW_HZ / FLASH_Q
@@ -1026,7 +966,7 @@ def plot_haloscope_linewidth_density_solar(
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel(rf"$\rho_{{\rm track}}(t={density_time_myr:g}\,\mathrm{{Myr}})/\rho_\odot$", fontsize=15)
-    ax.set_ylabel(r"Lab-frame stream linewidth $\Delta\nu_{\rm stream}$ [Hz]", fontsize=15)
+    ax.set_ylabel(r"Intrinsic stream linewidth $\Delta\nu_{\rm stream}$ [Hz]", fontsize=15)
     ax.tick_params(axis="both", labelsize=13)
     legend_handles = [
 
@@ -1037,7 +977,7 @@ def plot_haloscope_linewidth_density_solar(
         markerfacecolor=flash_color,
         markeredgecolor='none',
         markersize=9,
-        label="FLASH lab-frame linewidth",
+        label="FLASH stream linewidth",
     ),
 
     Line2D(
@@ -1047,7 +987,7 @@ def plot_haloscope_linewidth_density_solar(
         markerfacecolor=admx_color,
         markeredgecolor='none',
         markersize=9,
-        label="ADMX lab-frame linewidth",
+        label="ADMX stream linewidth",
     ),
 
     Patch(
@@ -1072,6 +1012,7 @@ def plot_haloscope_linewidth_density_solar(
      facecolor="white",
      edgecolor="0.6",
     )
+    ax.set_title(rf"Solar-neighborhood streams, $a={a_kpc:.1f}\,\mathrm{{kpc}}$", fontsize=13)
     fig.tight_layout()
     fig.savefig(outpath, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     plt.close(fig)
@@ -1087,9 +1028,8 @@ def plot_haloscope_linewidth_density_solar(
         f.write(f"ADMX cavity bandwidth range [Hz]: {admx_bw_low:.6e} -- {admx_bw_high:.6e}\n")
         for name, arr in [
             ("density_contrast", x),
-            ("v_rel_effective_kms", v_rel_eff[idx]),
-            ("delta_nu_FLASH_lab_mid_Hz", y_flash_mid),
-            ("delta_nu_ADMX_lab_mid_Hz", y_admx_mid),
+            ("delta_nu_FLASH_mid_Hz", y_flash_mid),
+            ("delta_nu_ADMX_mid_Hz", y_admx_mid),
         ]:
             f.write(
                 f"{name}: median={np.nanmedian(arr):.6e}, "

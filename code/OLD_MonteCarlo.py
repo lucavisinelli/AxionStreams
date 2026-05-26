@@ -35,68 +35,6 @@ DEFAULT_T_EXP_YR = 10.0
 DEFAULT_V_REL_ENCOUNTER_KMS = 220.0
 DEFAULT_V_EARTH_KMS = 232.0
 PCTOKM = 3.086e13
-C_KMS = 299792.458
-
-# Haloscope benchmark configurations. Frequencies are in Hz.
-FLASH_NU_HZ = 200.0e6
-FLASH_Q = 5.0e5
-ADMX_NU_LOW_HZ = 0.6e9
-ADMX_NU_HIGH_HZ = 2.0e9
-ADMX_Q = 6.0e4
-
-
-def haloscope_bandwidth_observables(
-    sigma_l_kms: float,
-    sigma_t_kms: float,
-    nu_hz: float,
-    q_cavity: float,
-) -> Tuple[float, float, float, float]:
-    """
-    Estimate the intrinsic stream linewidth and compare it to a cavity bandwidth.
-
-    The effective three-dimensional internal stream dispersion is taken to be
-
-        sigma_v^2 = sigma_l^2 + 2 sigma_t^2,
-
-    so that the kinetic linewidth scales as
-
-        Delta nu / nu_a ~= sigma_v^2 / c^2.
-
-    The cavity bandwidth is approximated as Delta nu_cav = nu / Q.
-
-    Returns
-    -------
-    delta_nu_stream_hz : float
-        Intrinsic stream linewidth at the benchmark frequency.
-    delta_nu_cavity_hz : float
-        Cavity bandwidth nu/Q.
-    frac_width : float
-        Fractional stream linewidth Delta nu / nu.
-    stream_to_cavity_ratio : float
-        Ratio Delta nu_stream / Delta nu_cavity.
-    """
-    vals = [sigma_l_kms, sigma_t_kms, nu_hz, q_cavity]
-    if not all(np.isfinite(vals)):
-        return np.nan, np.nan, np.nan, np.nan
-    if nu_hz <= 0.0 or q_cavity <= 0.0:
-        return np.nan, np.nan, np.nan, np.nan
-
-    sigma_l_kms = max(float(sigma_l_kms), 0.0)
-    sigma_t_kms = max(float(sigma_t_kms), 0.0)
-    sigma_v2_kms2 = sigma_l_kms**2 + 2.0 * sigma_t_kms**2
-    frac_width = sigma_v2_kms2 / C_KMS**2
-    delta_nu_stream_hz = float(nu_hz) * frac_width
-    delta_nu_cavity_hz = float(nu_hz) / float(q_cavity)
-    ratio = delta_nu_stream_hz / delta_nu_cavity_hz if delta_nu_cavity_hz > 0.0 else np.nan
-    return float(delta_nu_stream_hz), float(delta_nu_cavity_hz), float(frac_width), float(ratio)
-
-
-def haloscope_benchmark_tuple(sigma_l_kms: float, sigma_t_kms: float) -> Tuple[float, ...]:
-    """Return FLASH and ADMX linewidth diagnostics as a flat tuple."""
-    flash = haloscope_bandwidth_observables(sigma_l_kms, sigma_t_kms, FLASH_NU_HZ, FLASH_Q)
-    admx_low = haloscope_bandwidth_observables(sigma_l_kms, sigma_t_kms, ADMX_NU_LOW_HZ, ADMX_Q)
-    admx_high = haloscope_bandwidth_observables(sigma_l_kms, sigma_t_kms, ADMX_NU_HIGH_HZ, ADMX_Q)
-    return tuple(float(x) for block in (flash, admx_low, admx_high) for x in block)
 
 
 def stream_encounter_probability(
@@ -304,7 +242,6 @@ def simulate_one_amc(
         v_rel_effective_kms = effective_relative_velocity_kms(
             v_stream_bulk, use_earth_relative_velocity, v_rel_encounter_kms, v_earth_kms
         )
-        halo_tuple = haloscope_benchmark_tuple(0.0, 0.0)
         summary_tuple = (
             M_initial, R_initial, rho_initial,
             minicluster.M, minicluster.R, minicluster.rho,
@@ -321,7 +258,6 @@ def simulate_one_amc(
             P_encounter_orbit,
             v_rel_effective_kms,
             v_stream_bulk[0], v_stream_bulk[1], v_stream_bulk[2],
-            *halo_tuple,
         )
         return summary_tuple, None
 
@@ -502,8 +438,6 @@ def simulate_one_amc(
         cap_at_unity=True,
     )
 
-    halo_tuple = haloscope_benchmark_tuple(sigma_l, sigma_t)
-
     summary_tuple = (
         M_initial, R_initial, rho_initial,
         minicluster.M, minicluster.R, minicluster.rho,
@@ -520,7 +454,6 @@ def simulate_one_amc(
         P_encounter_orbit,
         v_rel_effective_kms,
         v_stream_bulk[0], v_stream_bulk[1], v_stream_bulk[2],
-        *halo_tuple,
     )
 
     if history is not None:
@@ -546,18 +479,6 @@ def simulate_one_amc(
             "v_stream_bulk_x_kms": float(v_stream_bulk[0]),
             "v_stream_bulk_y_kms": float(v_stream_bulk[1]),
             "v_stream_bulk_z_kms": float(v_stream_bulk[2]),
-            "delta_nu_flash_hz": halo_tuple[0],
-            "cavity_bw_flash_hz": halo_tuple[1],
-            "frac_width_flash": halo_tuple[2],
-            "stream_to_cavity_flash": halo_tuple[3],
-            "delta_nu_admx_low_hz": halo_tuple[4],
-            "cavity_bw_admx_low_hz": halo_tuple[5],
-            "frac_width_admx_low": halo_tuple[6],
-            "stream_to_cavity_admx_low": halo_tuple[7],
-            "delta_nu_admx_high_hz": halo_tuple[8],
-            "cavity_bw_admx_high_hz": halo_tuple[9],
-            "frac_width_admx_high": halo_tuple[10],
-            "stream_to_cavity_admx_high": halo_tuple[11],
             "T_exp_yr": T_exp_yr,
             "v_rel_encounter_kms": v_rel_encounter_kms,
             "use_earth_relative_velocity": int(use_earth_relative_velocity),
@@ -682,18 +603,6 @@ def Run_AMC_MonteCarlo(
     v_stream_bulk_x_list = np.array(summaries[:, 22], dtype=np.float64)
     v_stream_bulk_y_list = np.array(summaries[:, 23], dtype=np.float64)
     v_stream_bulk_z_list = np.array(summaries[:, 24], dtype=np.float64)
-    delta_nu_flash_list = np.array(summaries[:, 25], dtype=np.float64)
-    cavity_bw_flash_list = np.array(summaries[:, 26], dtype=np.float64)
-    frac_width_flash_list = np.array(summaries[:, 27], dtype=np.float64)
-    stream_to_cavity_flash_list = np.array(summaries[:, 28], dtype=np.float64)
-    delta_nu_admx_low_list = np.array(summaries[:, 29], dtype=np.float64)
-    cavity_bw_admx_low_list = np.array(summaries[:, 30], dtype=np.float64)
-    frac_width_admx_low_list = np.array(summaries[:, 31], dtype=np.float64)
-    stream_to_cavity_admx_low_list = np.array(summaries[:, 32], dtype=np.float64)
-    delta_nu_admx_high_list = np.array(summaries[:, 33], dtype=np.float64)
-    cavity_bw_admx_high_list = np.array(summaries[:, 34], dtype=np.float64)
-    frac_width_admx_high_list = np.array(summaries[:, 35], dtype=np.float64)
-    stream_to_cavity_admx_high_list = np.array(summaries[:, 36], dtype=np.float64)
 
     Gamma_diffuse = safe_geometric_mean(Gamma_diff_list)
     sigma_l_mean = safe_geometric_mean(sigma_l_list)
@@ -714,12 +623,6 @@ def Run_AMC_MonteCarlo(
     tvis_med, tvis_p16, tvis_p84 = safe_percentiles(tvis_years)
     Rvis_med, Rvis_p16, Rvis_p84 = safe_percentiles(R_stream_visible_list)
     vrel_med, vrel_p16, vrel_p84 = safe_percentiles(v_rel_effective_list)
-    dnu_flash_med, dnu_flash_p16, dnu_flash_p84 = safe_percentiles(delta_nu_flash_list)
-    ratio_flash_med, ratio_flash_p16, ratio_flash_p84 = safe_percentiles(stream_to_cavity_flash_list)
-    dnu_admx_low_med, dnu_admx_low_p16, dnu_admx_low_p84 = safe_percentiles(delta_nu_admx_low_list)
-    ratio_admx_low_med, ratio_admx_low_p16, ratio_admx_low_p84 = safe_percentiles(stream_to_cavity_admx_low_list)
-    dnu_admx_high_med, dnu_admx_high_p16, dnu_admx_high_p84 = safe_percentiles(delta_nu_admx_high_list)
-    ratio_admx_high_med, ratio_admx_high_p16, ratio_admx_high_p84 = safe_percentiles(stream_to_cavity_admx_high_list)
 
     if VERBOSE:
         print(f"Gamma_diffuse = {Gamma_diffuse}")
@@ -743,13 +646,6 @@ def Run_AMC_MonteCarlo(
             "Rstream_vis_median_pc, Rstream_vis_p16_pc, Rstream_vis_p84_pc, "
             "Penc_median, Penc_p16, Penc_p84, Penc_p90, Penc_p99, Penc_max, "
             "vrel_effective_median_km_s, vrel_effective_p16_km_s, vrel_effective_p84_km_s, "
-            "delta_nu_FLASH_median_Hz, delta_nu_FLASH_p16_Hz, delta_nu_FLASH_p84_Hz, "
-            "stream_to_cavity_FLASH_median, stream_to_cavity_FLASH_p16, stream_to_cavity_FLASH_p84, "
-            "delta_nu_ADMX_low_median_Hz, delta_nu_ADMX_low_p16_Hz, delta_nu_ADMX_low_p84_Hz, "
-            "stream_to_cavity_ADMX_low_median, stream_to_cavity_ADMX_low_p16, stream_to_cavity_ADMX_low_p84, "
-            "delta_nu_ADMX_high_median_Hz, delta_nu_ADMX_high_p16_Hz, delta_nu_ADMX_high_p84_Hz, "
-            "stream_to_cavity_ADMX_high_median, stream_to_cavity_ADMX_high_p16, stream_to_cavity_ADMX_high_p84, "
-            "FLASH_nu_Hz, FLASH_Q, ADMX_nu_low_Hz, ADMX_nu_high_Hz, ADMX_Q, "
             "T_exp_yr, v_rel_encounter_km_s, use_earth_relative_velocity, v_earth_km_s\n"
         )
         data_line = np.array([
@@ -760,13 +656,6 @@ def Run_AMC_MonteCarlo(
             Rvis_med, Rvis_p16, Rvis_p84,
             p_enc_med, p_enc_p16, p_enc_p84, p_enc_p90, p_enc_p99, p_enc_max,
             vrel_med, vrel_p16, vrel_p84,
-            dnu_flash_med, dnu_flash_p16, dnu_flash_p84,
-            ratio_flash_med, ratio_flash_p16, ratio_flash_p84,
-            dnu_admx_low_med, dnu_admx_low_p16, dnu_admx_low_p84,
-            ratio_admx_low_med, ratio_admx_low_p16, ratio_admx_low_p84,
-            dnu_admx_high_med, dnu_admx_high_p16, dnu_admx_high_p84,
-            ratio_admx_high_med, ratio_admx_high_p16, ratio_admx_high_p84,
-            FLASH_NU_HZ, FLASH_Q, ADMX_NU_LOW_HZ, ADMX_NU_HIGH_HZ, ADMX_Q,
             T_exp_yr, v_rel_encounter_kms, int(use_earth_relative_velocity), v_earth_kms
         ], dtype=np.float64)
         np.savetxt(output_file, data_line.reshape(1, -1), header=header, delimiter=", ")
@@ -801,23 +690,6 @@ def Run_AMC_MonteCarlo(
             v_stream_bulk_x_kms=v_stream_bulk_x_list.astype(np.float32),
             v_stream_bulk_y_kms=v_stream_bulk_y_list.astype(np.float32),
             v_stream_bulk_z_kms=v_stream_bulk_z_list.astype(np.float32),
-            delta_nu_flash_hz=delta_nu_flash_list.astype(np.float32),
-            cavity_bw_flash_hz=cavity_bw_flash_list.astype(np.float32),
-            frac_width_flash=frac_width_flash_list.astype(np.float32),
-            stream_to_cavity_flash=stream_to_cavity_flash_list.astype(np.float32),
-            delta_nu_admx_low_hz=delta_nu_admx_low_list.astype(np.float32),
-            cavity_bw_admx_low_hz=cavity_bw_admx_low_list.astype(np.float32),
-            frac_width_admx_low=frac_width_admx_low_list.astype(np.float32),
-            stream_to_cavity_admx_low=stream_to_cavity_admx_low_list.astype(np.float32),
-            delta_nu_admx_high_hz=delta_nu_admx_high_list.astype(np.float32),
-            cavity_bw_admx_high_hz=cavity_bw_admx_high_list.astype(np.float32),
-            frac_width_admx_high=frac_width_admx_high_list.astype(np.float32),
-            stream_to_cavity_admx_high=stream_to_cavity_admx_high_list.astype(np.float32),
-            FLASH_nu_hz=np.array(FLASH_NU_HZ, dtype=np.float32),
-            FLASH_Q=np.array(FLASH_Q, dtype=np.float32),
-            ADMX_nu_low_hz=np.array(ADMX_NU_LOW_HZ, dtype=np.float32),
-            ADMX_nu_high_hz=np.array(ADMX_NU_HIGH_HZ, dtype=np.float32),
-            ADMX_Q=np.array(ADMX_Q, dtype=np.float32),
             T_exp_yr=np.array(T_exp_yr, dtype=np.float32),
             v_rel_encounter_kms=np.array(v_rel_encounter_kms, dtype=np.float32),
             use_earth_relative_velocity=np.array(int(use_earth_relative_velocity), dtype=np.int8),
@@ -866,12 +738,6 @@ def Run_AMC_MonteCarlo(
         "vrel_effective_median_kms": vrel_med,
         "vrel_effective_p16_kms": vrel_p16,
         "vrel_effective_p84_kms": vrel_p84,
-        "delta_nu_FLASH_median_Hz": dnu_flash_med,
-        "stream_to_cavity_FLASH_median": ratio_flash_med,
-        "delta_nu_ADMX_low_median_Hz": dnu_admx_low_med,
-        "stream_to_cavity_ADMX_low_median": ratio_admx_low_med,
-        "delta_nu_ADMX_high_median_Hz": dnu_admx_high_med,
-        "stream_to_cavity_ADMX_high_median": ratio_admx_high_med,
         "use_earth_relative_velocity": int(use_earth_relative_velocity),
         "v_earth_kms": v_earth_kms,
     }

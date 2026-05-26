@@ -1,5 +1,7 @@
 python3 plot_mc_radial_observables.py --mc_dir ../MC --suffix PL_powerlaw --output_dir figures
 
+python3 pipeline.py --plot_only_haloscope --mc_base_dir ../MC --profile_tag PL_powerlaw --earth_radius_kpc 8.5 --output_root pipeline_outputs
+
 python3 pipeline.py --run_montecarlo --run_streams --overwrite --include_earth_radius --earth_radius_kpc 8.5 --a_values_kpc 0.3,0.5,0.7,1.0,1.5,2.0,3.0,5.0,7.0,10.0 --n_amc 100000 --n_history_keep 300 --max_files 100 --plot_density_contours --contour_max_files 1 --total_tracers 50000 --T_exp_yr 10 --use_earth_relative_velocity --v_rel_encounter_kms 232
 
 # AMC STREAM PIPELINE – USER GUIDE
